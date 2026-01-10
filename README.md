@@ -2,27 +2,31 @@
 
 ClashWarAnalytics is a modular Python ETL (Extract, Transform, Load) pipeline designed to provide advanced analytics for Clash of Clans Clan War Leagues (CWL).
 
-While standard in-game statistics focus primarily on offensive performance, this tool leverages the official Supercell API to perform a comprehensive analysis of both offense and defense. Its primary goal is to calculate the "Net Star Balance" for each member, quantifying their true contribution to the clan's success by subtracting stars conceded in defense from stars earned in attacks.
+Unlike standard in-game statistics, this tool performs a comprehensive analysis of both offense and defense across **multiple clans simultaneously**. It calculates the "Net Star Balance" for each member, creating a true performance index that is automatically uploaded to Google Drive with professional formatting and status notifications via Telegram.
 
 ## Core Features
 
+* **Multi-Clan Support:** Process multiple clans in a single run by defining a list of tags in the configuration.
 * **Automated Data Extraction:** Connects to the Supercell API to fetch real-time data for the current Clan War League group and rounds.
 * **Net Balance Metric:** Calculates a custom performance metric defined as `Total Offensive Stars - Total Defensive Stars Conceded`.
-* **Detailed Statistical Breakdown:** Tracks specific attack outcomes (3-star, 2-star, 1-star, and 0-star rates) per player.
-* **Historical Tracking:** Automatically appends new data to a persistent Excel history file, creating a new sheet for the current month (e.g., "Jan 2026") to allow for long-term trend analysis.
-* **Automated Reporting:** Generates a professional Excel report (`CWL_History.xlsx`) with:
-    * Auto-adjusted column widths for readability.
-    * Conditional formatting (heatmaps) to visually highlight top performers and defensive liabilities.
-    * Smart filtering to exclude inactive members from the report.
+* **Google Drive Integration:**
+    * Uses the **XlsxWriter** engine to generate files 100% compatible with Google Sheets.
+    * Supports real Excel Tables with sorting and filtering capabilities directly in Drive.
+    * Generates heatmaps (Conditional Formatting) for visual performance tracking.
+* **Telegram Notifications:**
+    * Sends automated status updates (Success, Error, or Waiting for War End).
+    * Provides a summary of processed clans directly to your mobile.
+* **Historical Tracking:** Automatically appends new data to a persistent Excel history file, creating a new sheet for each clan/month (e.g., "MainClan Jan 2026").
 
 ## Technical Architecture
 
-The project follows a clean, modular architecture separating concerns:
+The project follows a clean, modular architecture:
 
 * **`src/api`**: Handles HTTP requests, authentication, and error handling with the Supercell API.
 * **`src/logic`**: Contains the business logic for processing raw JSON data and calculating aggregated statistics.
-* **`src/models`**: Defines data structures using Python Dataclasses for type safety.
-* **`src/report`**: Manages Excel generation using Pandas and OpenPyXL.
+* **`src/report`**: Manages Excel generation using **XlsxWriter** for robust formatting.
+* **`src/notifications`**: Handles Telegram API integration for real-time alerts.
+* **`src/upload_drive`**: Manages the connection and file replacement on Google Drive.
 
 ## Installation
 
@@ -32,7 +36,7 @@ The project follows a clean, modular architecture separating concerns:
     cd ClashWarAnalytics
     ```
 
-2.  Create a virtual environment (recommended):
+2.  Create a virtual environment:
     ```bash
     python3 -m venv venv
     source venv/bin/activate
@@ -46,17 +50,27 @@ The project follows a clean, modular architecture separating concerns:
 ## Configuration
 
 1.  Obtain a generic API Token from the [Clash of Clans Developer Portal](https://developer.clashofclans.com/).
-2.  Create a `.env` file in the root directory based on the provided `.env.example`.
-3.  Add your credentials:
+2.  Obtain a Telegram Bot Token via @BotFather and your Chat ID via @userinfobot.
+3.  Create a `.env` file based on `.env.example`:
 
     ```ini
     COC_API_TOKEN=your_jwt_token_here
-    CLAN_TAG=#YOUR_CLAN_TAG
+    
+    # Support for multiple clans (comma separated)
+    CLAN_TAGS=#TAG1,#TAG2
+    
+    # Google Drive
+    GOOGLE_DRIVE_FOLDER_ID=your_folder_id
+    GOOGLE_CREDENTIALS_FILE=credentials.json
+    
+    # Telegram
+    TELEGRAM_BOT_TOKEN=12345:YourToken
+    TELEGRAM_CHAT_ID=123456789
     ```
 
 ## Usage
 
-Run the main pipeline script:
+Run the main pipeline script manually:
 
 ```bash
 python3 main.py
