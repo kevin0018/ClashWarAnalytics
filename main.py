@@ -2,84 +2,158 @@ from src.config import Config
 from src.api.client import CoCClient
 from src.logic.analyzer import WarAnalyzer
 from src.report.excel import ExcelReporter
+from src.upload_drive import update_file
+from src.notifications import send_telegram_message
 import time
+import pandas as pd
 
 def main():
-    print("[INFO] Starting ClashWaralytics ETL Pipeline...")
+    print("[INFO] Starting ClashWarAnalytics ETL Pipeline (Multi-Clan)...")
     
-    # 1. Initialize API Client
+    # Initialize API Client
     client = CoCClient()
     
-    # 2. Fetch Basic Clan Data (To get the Roster)
-    print(f"[INFO] Fetching clan details for {Config.CLAN_TAG}...")
-    clan_info = client.get_clan_info(Config.CLAN_TAG)
+    # Flag to track if we actually generated any new report to upload
+    files_updated = False
     
-    if not clan_info:
-        print("[ERROR] Could not fetch clan info. Aborting.")
-        return
+    # Lists to track status for the notification
+    generated_clans = []
+    skipped_clans = []
 
-    # Use 'memberList' correctly as per API response
-    member_list = clan_info.get('memberList', [])
-    print(f"[INFO] Clan Roster loaded: {len(member_list)} members.")
-
-    # 3. Initialize Analyzer with the roster
-    analyzer = WarAnalyzer(member_list)
-
-    # 4. Fetch League Group
-    print("[INFO] Fetching CWL Group Data...")
-    league_group = client.get_league_group(Config.CLAN_TAG)
-    
-    if not league_group or 'rounds' not in league_group:
-        print("[ERROR] No active CWL group found. Is the clan in a league?")
-        return
-
-    rounds = league_group['rounds']
-    print(f"[INFO] Found {len(rounds)} rounds to process.")
-
-    # 5. Loop through rounds and process wars
-    for i, round_data in enumerate(rounds):
-        war_tags = round_data.get('warTags', [])
+    # --- CLAN LOOP ---
+    for clan_tag in Config.CLAN_TAGS:
+        clan_tag = clan_tag.strip()
         
-        found_our_war = False
+        print("\n---------------------------------------------------")
+        print(f"[INFO] Processing Clan Tag: {clan_tag}")
+        print("---------------------------------------------------")
+
+        # 1. Fetch Basic Clan Data
+        clan_info = client.get_clan_info(clan_tag)
         
-        # Iterate through the 4 wars in the group round to find ours
-        for war_tag in war_tags:
-            if war_tag == "#0": 
-                continue # War not generated yet
+        if not clan_info:
+            print(f"[ERROR] Could not fetch clan info for {clan_tag}. Skipping.")
+            continue
+
+        # Extract Clan Name
+        clan_name = clan_info.get('name', 'Clan')
+        member_list = clan_info.get('memberList', [])
+        print(f"[INFO] Clan '{clan_name}' roster loaded: {len(member_list)} members.")
+
+        # 2. Initialize Analyzer
+        analyzer = WarAnalyzer(member_list)
+
+        # 3. Fetch League Group
+        league_group = client.get_league_group(clan_tag)
+        
+        if not league_group or 'rounds' not in league_group:
+            print(f"[WARN] {clan_name} ({clan_tag}) is not in an active CWL group. Skipping.")
+            skipped_clans.append(f"{clan_name} (No CWL)")
+            continue
+
+        rounds = league_group['rounds']
+        print(f"[INFO] Found {len(rounds)} rounds to process.")
+
+        # Flag for THIS specific clan
+        is_cwl_complete = False 
+        
+        # 4. Process Rounds
+        for i, round_data in enumerate(rounds):
+            war_tags = round_data.get('warTags', [])
+            found_our_war = False
             
-            # Fetch war details
-            war_data = client._get(f"/clanwarleagues/wars/{war_tag.replace('#', '%23')}")
-            
-            if not war_data:
-                continue
+            for war_tag in war_tags:
+                if war_tag == "#0": continue 
+                
+                # Fetch war details
+                war_data = client._get(f"/clanwarleagues/wars/{war_tag.replace('#', '%23')}")
+                
+                if not war_data: continue
 
-            # Identify if this war belongs to our clan
-            clan_tag_in_war = war_data.get('clan', {}).get('tag')
-            opponent_tag_in_war = war_data.get('opponent', {}).get('tag')
+                # Check if this war involves the current clan
+                clan_tag_in_war = war_data.get('clan', {}).get('tag')
+                opponent_tag_in_war = war_data.get('opponent', {}).get('tag')
+                
+                if clan_tag_in_war == clan_tag or opponent_tag_in_war == clan_tag:
+                    state = war_data.get('state')
+                    print(f"   > Round {i+1}: {state}")
+                    analyzer.process_round(war_data, clan_tag)
+                    
+                    # Check if Round 7 has ended
+                    if i == 6:
+                        if state == 'warEnded':
+                            is_cwl_complete = True
+                        else:
+                            print(f"   [INFO] Round 7 found but state is '{state}'. CWL not finished.")
+                    
+                    found_our_war = True
+                    break 
             
-            if clan_tag_in_war == Config.CLAN_TAG or opponent_tag_in_war == Config.CLAN_TAG:
-                print(f"   > Processing Round {i+1} (State: {war_data.get('state')})")
-                analyzer.process_round(war_data, Config.CLAN_TAG)
-                found_our_war = True
-                break # Stop searching this round, move to next
-        
-        if not found_our_war:
-            print(f"   > Round {i+1}: No active war data found (or Preparation Day).")
-        
-        # Rate limit protection
-        time.sleep(0.5)
+            if not found_our_war:
+                print(f"   > Round {i+1}: No data or Prep Day.")
+            
+            time.sleep(0.5)
 
-    # 6. Generate Report
-    print("[INFO] Processing finished. Generating Excel report...")
+        # 5. Generate Excel for this Clan
+        if is_cwl_complete:
+            print(f"[INFO] CWL Completed for {clan_name}. Generating Excel sheet...")
+            
+            # Sort by Net Balance
+            sorted_stats = analyzer.get_sorted_stats(sort_by="net_balance")
+            
+            # Generate Excel
+            output_filename = "CWL_History.xlsx"
+            ExcelReporter.generate(sorted_stats, clan_name, output_filename)
+            
+            files_updated = True
+            generated_clans.append(clan_name)
+        else:
+            print(f"[STOP] Report skipped for {clan_name} (CWL incomplete).")
+            skipped_clans.append(clan_name)
+
+    # --- UPLOAD & NOTIFICATION PHASE ---
     
-    # Sort data by Net Balance (Top performers first)
-    sorted_stats = analyzer.get_sorted_stats(sort_by="net_balance")
-    
-    # This filename will persist. New months will be added as new sheets.
-    output_filename = "CWL_History.xlsx"
-    ExcelReporter.generate(sorted_stats, output_filename)
-    
-    print("[DONE] Pipeline finished successfully.")
+    date_str = pd.Timestamp.now().strftime("%Y-%m-%d %H:%M")
+
+    if files_updated:
+        print("\n[INFO] Reports generated. Initiating Drive upload...")
+        try:
+            update_file()
+            
+            # --- SUCCESS NOTIFICATION ---
+            clans_str = ", ".join(generated_clans)
+            
+            msg = (
+                f"<b>CWL Report Generated</b>\n\n"
+                f"Clans: {clans_str}\n"
+                f"Date: {date_str}\n"
+                f"Status: Success. File updated on Google Drive."
+            )
+            send_telegram_message(msg)
+            
+        except Exception as e:
+            print(f"[ERROR] Drive upload failed. Error: {e}")
+            
+            # --- CRITICAL ERROR NOTIFICATION ---
+            error_msg = f"<b>Critical Error</b>\nDrive upload failed:\n{str(e)}"
+            send_telegram_message(error_msg)
+            
+    else:
+        print("\n[INFO] No new reports were generated. Drive upload skipped.")
+        
+        # --- INFO NOTIFICATION (WAITING) ---
+        # This tells you the script ran but there was nothing to do yet.
+        if skipped_clans:
+            skipped_str = ", ".join(skipped_clans)
+            msg = (
+                f"<b>CWL Script Executed - No Changes</b>\n\n"
+                f"Clans Checked: {skipped_str}\n"
+                f"Date: {date_str}\n"
+                f"Status: CWL not finished yet. Waiting for Round 7 end."
+            )
+            send_telegram_message(msg)
+
+    print("[DONE] Pipeline finished.")
 
 if __name__ == "__main__":
     main()

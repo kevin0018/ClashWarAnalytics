@@ -1,4 +1,4 @@
 requests
 pandas
-openpyxl
+xlsxwriter
 python-dotenv
