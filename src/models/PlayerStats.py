@@ -13,6 +13,8 @@ class PlayerStats:
     attacks_used: int = 0
     stars_earned: int = 0  # Total stars
     destruction_percentage: float = 0.0
+    avg_stars_attack: float = 0.0
+    avg_destruction: float = 0.0
     
     # Star Breakdown
     three_star_count: int = 0
@@ -24,6 +26,8 @@ class PlayerStats:
     stars_conceded: int = 0
     defense_count: int = 0
     destruction_received: float = 0.0
+    avg_stars_defense: float = 0.0
+    avg_destruction_defense: float = 0.0
 
     @property
     def net_balance(self) -> int:

@@ -1,9 +1,9 @@
-from typing import List, Dict, Optional
-from src.models import PlayerStats
+from typing import List, Dict
+from src.models.PlayerStats import PlayerStats
 
 class WarAnalyzer:
     """
-    Engine that processes raw Clan War League data to extract insights.
+    Engine that processes raw Clan War League data to extract insights. 
     """
 
     def __init__(self, members: List[Dict]):
@@ -15,23 +15,20 @@ class WarAnalyzer:
         """Creates an empty database for all roster members."""
         for member in members:
             tag = member.get('tag')
-            name = member.get('name')
-            th_level = member.get('townHallLevel', 0)
-            
             self.stats[tag] = PlayerStats(
                 tag=tag,
-                name=name,
-                town_hall_level=th_level
+                name=member.get('name'),
+                town_hall_level=member.get('townHallLevel', 0)
             )
 
     def process_round(self, war_data: Dict, my_clan_tag: str):
         """
-        Processes a full war round (Offense and Defense).
+        Processes a full war round (Offense and Defense) and updates the stats database.
         """
         if war_data.get('state') == 'notInWar':
             return
 
-        # Identify which clan is ours
+        # Identify clans
         if war_data['clan']['tag'] == my_clan_tag:
             my_clan = war_data['clan']
             enemy_clan = war_data['opponent']
@@ -39,7 +36,7 @@ class WarAnalyzer:
             my_clan = war_data['opponent']
             enemy_clan = war_data['clan']
 
-        # 1. Process OFFENSE (Our attacks)
+        # Offense Processing
         for member in my_clan.get('members', []):
             tag = member.get('tag')
             
@@ -48,44 +45,53 @@ class WarAnalyzer:
                 attacks = member.get('attacks', [])
                 if attacks:
                     self.stats[tag].attacks_used += len(attacks)
-                    
-                    # Sum raw totals
                     self.stats[tag].stars_earned += sum(a['stars'] for a in attacks)
+                    # Accumulate raw percentage
                     self.stats[tag].destruction_percentage += sum(a['destructionPercentage'] for a in attacks)
                     
-                    # Detailed Star Breakdown (Leader's request)
                     for attack in attacks:
-                        stars = attack['stars']
-                        if stars == 3:
-                            self.stats[tag].three_star_count += 1
-                        elif stars == 2:
-                            self.stats[tag].two_star_count += 1
-                        elif stars == 1:
-                            self.stats[tag].one_star_count += 1
-                        else:
-                            self.stats[tag].zero_star_count += 1
+                        s = attack['stars']
+                        if s == 3: self.stats[tag].three_star_count += 1
+                        elif s == 2: self.stats[tag].two_star_count += 1
+                        elif s == 1: self.stats[tag].one_star_count += 1
+                        else: self.stats[tag].zero_star_count += 1
 
-        # 2. Process DEFENSE (Stars conceded)
-        # We iterate through ENEMY members and check who they attacked
+        # Defense Processing
         for enemy in enemy_clan.get('members', []):
             for attack in enemy.get('attacks', []):
                 defender_tag = attack.get('defenderTag')
-                
-                # If the defender is one of ours, log the damage
                 if defender_tag in self.stats:
                     self.stats[defender_tag].defense_count += 1
                     self.stats[defender_tag].stars_conceded += attack['stars']
                     self.stats[defender_tag].destruction_received += attack['destructionPercentage']
 
     def get_sorted_stats(self, sort_by: str = "net_balance") -> List[PlayerStats]:
-        """Returns the list of stats sorted by the given criteria."""
+        """Calculates averages and returns sorted list."""
+        
+        # --- CALCULATE AVERAGES BEFORE SORTING ---
+        for member in self.stats.values():
+            # --- OFENSIVA ---
+            if member.attacks_used > 0:
+                member.avg_stars_attack = round(member.stars_earned / member.attacks_used, 2)
+                member.avg_destruction = round(member.destruction_percentage / member.attacks_used, 2)
+            else:
+                member.avg_stars_attack = 0.0
+                member.avg_destruction = 0.0
+
+            # --- DEFENSIVA ---
+            if member.defense_count > 0:
+                member.avg_stars_defense = round(member.stars_conceded / member.defense_count, 2)
+                member.avg_destruction_defense = round(member.destruction_received / member.defense_count, 2)
+            else:
+                member.avg_stars_defense = None 
+                member.avg_destruction_defense = None 
+
+        # --- SORTING ---
         all_stats = list(self.stats.values())
         
         if sort_by == "net_balance":
-            # Sort by Net Balance (High to Low)
             return sorted(all_stats, key=lambda x: x.net_balance, reverse=True)
         elif sort_by == "stars_conceded":
-            # Sort by Defense Fails (High to Low) - Who conceded the most
             return sorted(all_stats, key=lambda x: x.stars_conceded, reverse=True)
         
         return all_stats

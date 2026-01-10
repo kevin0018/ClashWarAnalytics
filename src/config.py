@@ -8,7 +8,8 @@ class Config:
     """Central configuration class."""
     
     API_TOKEN = os.getenv("COC_API_TOKEN")
-    CLAN_TAG = os.getenv("CLAN_TAG")
+    CLAN_TAGS = [tag.strip() for tag in os.getenv("CLAN_TAGS", "").split(",") if tag.strip()]
+    GOOGLE_DRIVE_FILE_ID = os.getenv("GOOGLE_DRIVE_FILE_ID")
     
     # Supercell API v1 Base URL
     BASE_URL = "https://api.clashofclans.com/v1"
@@ -17,8 +18,8 @@ class Config:
     if not API_TOKEN:
         raise ValueError("FATAL ERROR: COC_API_TOKEN not found in .env file.")
     
-    if not CLAN_TAG:
-        raise ValueError("FATAL ERROR: CLAN_TAG not found in .env file.")
+    if not CLAN_TAGS:
+        raise ValueError("FATAL ERROR: CLAN_TAGS not found in .env file.")
 
     # Standard headers for all requests
     HEADERS = {
