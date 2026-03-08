@@ -4,12 +4,31 @@ from src.logic.analyzer import WarAnalyzer
 from src.report.excel import ExcelReporter
 from src.upload_drive import update_file
 from src.notifications import send_telegram_message
+import os
+import sys
 import time
 import pandas as pd
 
+SERVICE_ACCOUNT_FILE = "service_account.json"
+
 def main():
     print("[INFO] Starting ClashWarAnalytics ETL Pipeline (Multi-Clan)...")
-    
+
+    # Verificación temprana: sin service_account.json no se puede subir a Drive
+    if not os.path.exists(SERVICE_ACCOUNT_FILE):
+        error_msg = (
+            f"<b>Error de configuración</b>\n\n"
+            f"Falta el archivo <code>{SERVICE_ACCOUNT_FILE}</code>.\n"
+            f"Sin él no se puede subir el Excel a Google Drive. "
+            f"Revisa la configuración en el servidor (VPS)."
+        )
+        print(f"[ERROR] '{SERVICE_ACCOUNT_FILE}' no encontrado. No se puede subir a Drive.")
+        try:
+            send_telegram_message(error_msg)
+        except Exception:
+            pass
+        sys.exit(1)
+
     # Initialize API Client
     client = CoCClient()
     

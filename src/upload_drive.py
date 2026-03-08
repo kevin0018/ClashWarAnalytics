@@ -18,8 +18,10 @@ FILE_ID = Config.GOOGLE_DRIVE_FILE_ID
 def authenticate():
     """Authenticates with Google using the service account JSON file."""
     if not os.path.exists(SERVICE_ACCOUNT_FILE):
-        print(f"[ERROR] '{SERVICE_ACCOUNT_FILE}' not found in project root.")
-        return None
+        raise FileNotFoundError(
+            f"'{SERVICE_ACCOUNT_FILE}' no encontrado en la raíz del proyecto. "
+            "No se puede subir a Google Drive."
+        )
 
     creds = service_account.Credentials.from_service_account_file(
         SERVICE_ACCOUNT_FILE, scopes=SCOPES)
@@ -31,18 +33,18 @@ def update_file():
     
     # Verify local file exists
     if not os.path.exists(LOCAL_FILE):
-        print(f"[ERROR] Local file '{LOCAL_FILE}' not found.")
-        print("Hint: Has main.py been executed successfully?")
-        return
+        raise FileNotFoundError(
+            f"Archivo local '{LOCAL_FILE}' no encontrado. "
+            "¿Se generó el reporte correctamente?"
+        )
 
     # Verify configuration
     if not FILE_ID:
-        print("[ERROR] GOOGLE_DRIVE_FILE_ID is missing in .env configuration.")
-        return
+        raise ValueError(
+            "GOOGLE_DRIVE_FILE_ID no está configurado en .env"
+        )
 
     creds = authenticate()
-    if not creds:
-        return
 
     try:
         # Build Drive API service
