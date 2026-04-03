@@ -70,6 +70,7 @@ def update_file():
     except Exception as e:
         print(f"[ERROR] Failed to upload to Drive: {e}")
         print("Hint: Ensure the Service Account email has 'Editor' access to the file.")
+        raise
 
 if __name__ == '__main__':
     update_file()
